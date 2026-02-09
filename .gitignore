@@ -1,0 +1,14 @@
+# Archivos del sistema
+Thumbs.db
+.DS_Store
+
+# Temporales de Audacity
+*.aup3-shm
+*.aup3-wal
+
+# Carpetas de respaldo o basura
+/temp/
+/backup/
+
+# Logs
+*.log
