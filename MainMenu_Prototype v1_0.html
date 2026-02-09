@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sentinel Alliance - HQ Terminal</title>
+    <style>
+        :root {
+            --radar-green: #00ff41;
+            --titan-red: #ff3300;
+            --ufo-cyan: #00f2ff;
+            --bg-dark: #050505;
+            --workshop-pink: #ff00ff;
+        }
+
+        body {
+            margin: 0; padding: 0;
+            background-color: var(--bg-dark);
+            color: var(--radar-green);
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden; display: flex; height: 100vh;
+        }
+
+        /* --- DYNAMIC GEOSCAPE --- */
+        #geoscape-bg {
+            position: absolute; right: -5%; width: 650px; height: 650px;
+            background: radial-gradient(circle, #1a1a1a 0%, #000 80%);
+            border-radius: 50%;
+            box-shadow: inset -50px -50px 100px #000, 0 0 30px rgba(0, 255, 65, 0.1);
+            animation: rotateEarth 240s linear infinite;
+            z-index: -1; align-self: center;
+        }
+        @keyframes rotateEarth { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        .war-zone {
+            position: absolute; width: 6px; height: 6px;
+            background: red; border-radius: 50%;
+            filter: blur(3px); animation: burn 2s infinite alternate;
+        }
+        @keyframes burn { 0% { opacity: 0.2; transform: scale(1); } 100% { opacity: 1; transform: scale(3); background: orange; } }
+
+        .ufo-anomaly {
+            position: absolute; width: 12px; height: 12px;
+            border: 2px solid var(--ufo-cyan);
+            box-shadow: 0 0 10px var(--ufo-cyan);
+            animation: ufoSpin 3s infinite linear;
+        }
+        @keyframes ufoSpin { 0% { transform: rotate(45deg); } 100% { transform: rotate(405deg); } }
+
+        /* --- UI COMPONENTS --- */
+        .main-layout { display: flex; width: 100%; padding: 50px; gap: 50px; }
+        .menu-container { display: flex; flex-direction: column; gap: 10px; min-width: 420px; }
+        .section-label { font-size: 0.6rem; color: #666; margin-top: 15px; letter-spacing: 2px; }
+
+        .menu-btn {
+            background: rgba(0, 255, 65, 0.05); border: 1px solid var(--radar-green);
+            color: var(--radar-green); padding: 12px 20px; font-size: 1rem;
+            text-align: left; cursor: pointer; transition: 0.2s; text-transform: uppercase;
+        }
+        .menu-btn:hover { background: var(--radar-green); color: #000; box-shadow: 0 0 15px var(--radar-green); }
+
+        .panel {
+            display: none; flex-grow: 1;
+            background: rgba(0, 15, 0, 0.95); border: 1px solid var(--radar-green);
+            padding: 30px; backdrop-filter: blur(10px); height: 85vh; overflow-y: auto;
+        }
+
+        /* LOGISTICS & CARDS */
+        .barracks-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .soldier-item { padding: 10px; border: 1px solid rgba(0,255,65,0.2); cursor: pointer; margin-bottom: 5px; }
+        .soldier-item:hover { background: rgba(0,255,65,0.1); border-color: var(--radar-green); }
+        .photo-placeholder { width: 150px; height: 180px; border: 2px dashed var(--radar-green); display: flex; align-items: center; justify-content: center; margin: 0 auto 15px; }
+        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #111; padding: 5px 0; font-size: 0.8rem; }
+        .intel-card { border: 1px solid var(--radar-green); padding: 15px; margin-bottom: 15px; background: rgba(0,255,65,0.05); }
+        .inventory-list { font-size: 0.75rem; color: var(--ufo-cyan); margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+    <div id="geoscape-bg"></div>
+
+    <div class="main-layout">
+        <div class="menu-container" id="main-menu">
+            <h1 style="letter-spacing: 5px;">SENTINEL ALLIANCE</h1>
+            <p id="system-status" style="font-size: 0.7rem; color: #ff3300; margin-bottom: 20px;">[!] ANALYZING SEASON DATA...</p>
+            
+            <div class="section-label">ONLINE WARFARE</div>
+            <button class="menu-btn" style="color:var(--titan-red); border-color:var(--titan-red)" onclick="openPanel('region-panel')">
+                TitanMan Mode (Official)
+                <span style="display:block; font-size: 0.5rem;">Join the Global Season</span>
+            </button>
+            <button class="menu-btn" onclick="openPanel('custom-panel')">Co-op Ops (Custom Rules)</button>
+            
+            <div class="section-label">HEADQUARTERS</div>
+            <button class="menu-btn" onclick="openPanel('barracks-panel')">Barracks & Logistics</button>
+            <button class="menu-btn" onclick="openPanel('intel-panel')">Intel Dossier</button>
+            <button class="menu-btn" onclick="openPanel('market-panel')">Global Exchange</button>
+            <button class="menu-btn" style="border-color: var(--workshop-pink); color: var(--workshop-pink);" onclick="openPanel('workshop-panel')">Sentinel Workshop</button>
+            
+            <div class="section-label">COMMUNITY TOOLS</div>
+            <button class="menu-btn" style="border-color: #aaa; color: #aaa;" onclick="openPanel('editor-panel')">
+                Map Architect
+                <span style="display:block; font-size: 0.5rem;">Create & Submit Tactical Zones</span>
+            </button>
+            <button class="menu-btn" onclick="alert('System Offline')">Exit</button>
+        </div>
+
+        <div id="region-panel" class="panel" style="border-color: var(--titan-red);">
+            <h2 style="border-bottom: 2px solid var(--titan-red); color: var(--titan-red);">TITANMAN MODE: INITIAL INSERTION</h2>
+            <div style="display: flex; flex-direction: column; gap: 15px;">
+                <div class="intel-card" style="border-color: var(--radar-green); cursor: pointer;" onclick="setChaos(0.1, 'Predictable')">
+                    <h4 style="margin:0;">NORTHERN TERRITORIES [GREEN ZONE]</h4>
+                    <p style="font-size: 0.7rem;">Linear progression. Intel Accuracy: 95%</p>
+                </div>
+                <div class="intel-card" style="border-color: #ffaa00; cursor: pointer;" onclick="setChaos(0.5, 'Reactive')">
+                    <h4 style="margin:0; color: #ffaa00;">PACIFIC RIM [VOLATILE]</h4>
+                    <p style="font-size: 0.7rem;">Adaptive difficulty. Intel Accuracy: 60%</p>
+                </div>
+                <div class="intel-card" style="border-color: var(--titan-red); background: rgba(255,51,0,0.1); cursor: pointer;" onclick="setChaos(0.9, 'Anomalous')">
+                    <h4 style="margin:0; color: var(--titan-red);">CENTRAL EURASIA [CRITICAL]</h4>
+                    <p style="font-size: 0.7rem;">Non-linear/Chaotic. Intel Accuracy: 15%</p>
+                </div>
+            </div>
+            <div id="chaos-log" style="margin-top: 20px; font-size: 0.8rem; color: #ff3300; text-align: center; border: 1px dashed #333; padding: 10px;">
+                COMMANDER, CHOOSE A SEED POINT
+            </div>
+            <button class="menu-btn" style="width:100%; text-align:center; margin-top:10px;" onclick="closePanels()">BACK</button>
+        </div>
+
+        <div id="barracks-panel" class="panel">
+            <h2 style="border-bottom: 2px solid var(--radar-green)">BARRACKS & LOGISTICS</h2>
+            <div style="display: flex; gap: 20px; margin-bottom: 20px; background: rgba(0,255,65,0.1); padding: 10px; border: 1px solid var(--radar-green);">
+                <span>CREDITS: <b class="sc-val">15,000</b> SC</span>
+                <span>ALLOYS: <b class="au-val">45</b> AU</span>
+            </div>
+            <div class="barracks-grid">
+                <div class="left-col">
+                    <h4 style="color: var(--titan-red); border-bottom: 1px solid #333;">GLOBAL SUPPLY POOL</h4>
+                    <div class="inventory-list">
+                        <div class="stat-row" style="color: var(--titan-red);"><span>TOTAL PERSONNEL:</span> <span>200/200</span></div>
+                        <div class="stat-row"><span>5.56mm AMMO:</span> <span>1000 rnds</span></div>
+                        <div class="stat-row"><span>ASSAULT RIFLES:</span> <span>30</span></div>
+                        <div class="stat-row"><span>ALIEN CORES:</span> <span>02</span></div>
+                        <div class="stat-row"><span>ALIEN BODIES:</span> <span>05</span></div>
+                    </div>
+                    <h4 style="color: var(--radar-green); border-bottom: 1px solid #333;">ACTIVE ROSTER</h4>
+                    <div class="soldier-list">
+                        <div class="soldier-item" onclick="showDetails('GHOST', 'Sniper', 95, 3, 12, 35)">CPT. TAYLOR [SNIPER]</div>
+                        <div class="soldier-item" onclick="showDetails('RHINO', 'Gunner', 65, 8, 8, 75)">SGT. CHEN [GUNNER]</div>
+                        <div class="soldier-item" onclick="showDetails('PATCH', 'Medic', 75, 5, 10, 80)">LT. ADAMS [MEDIC]</div>
+                    </div>
+                </div>
+                <div id="soldier-details" style="text-align: center; border-left: 1px solid #222; padding-left: 20px;">
+                    <div class="photo-placeholder">PHOTO PENDING</div>
+                    <h3 id="det-name">SELECT PERSONNEL</h3>
+                    <p id="det-class">-</p>
+                    <div class="stat-row"><span>ACCURACY:</span> <span id="det-acc">-</span></div>
+                    <div class="stat-row"><span>HEALTH:</span> <span id="det-hp">-</span></div>
+                    <div class="stat-row"><span>MOBILITY:</span> <span id="det-mob">-</span></div>
+                    <div class="stat-row"><span>WILLPOWER:</span> <span id="det-will">-</span></div>
+                    <button class="menu-btn" style="width:100%; margin-top:15px; font-size:0.7rem; text-align:center;">MANAGE EQUIPMENT</button>
+                </div>
+            </div>
+            <button class="menu-btn" style="margin-top:20px; width:100%; text-align:center" onclick="closePanels()">BACK TO HQ</button>
+        </div>
+
+        <div id="market-panel" class="panel">
+            <h2 style="border-bottom: 2px solid var(--ufo-cyan); color: var(--ufo-cyan);">GLOBAL EXCHANGE</h2>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 15px; background: rgba(0,242,255,0.1); padding: 10px;">
+                <span>CREDITS: <b>15,000</b> SC</span>
+                <span>ALLOY: <b>45</b> AU</span>
+            </div>
+            <div class="intel-card" style="border-color: var(--ufo-cyan);">
+                <h4 style="margin:0;">AVAILABLE CONTRACTS</h4>
+                <div class="stat-row"><span>SGT. 'Viper' (Lvl 5 Sniper)</span> <button class="menu-btn" style="padding:2px 10px; font-size:0.7rem;">5,000 SC</button></div>
+                <div class="stat-row"><span>CPT. 'Butcher' (Lvl 8 Gunner)</span> <button class="menu-btn" style="padding:2px 10px; font-size:0.7rem;">120 AU</button></div>
+            </div>
+            <div class="intel-card" style="border-color: #888;">
+                <h4 style="margin:0;">RAW MATERIALS</h4>
+                <div class="stat-row"><span>Alien Power Cell</span> <span>1,200 SC</span></div>
+                <p style="font-size: 0.5rem; color: var(--titan-red);">TREND: Price rising.</p>
+            </div>
+            <button class="menu-btn" style="width:100%; text-align:center;" onclick="closePanels()">BACK</button>
+        </div>
+
+        <div id="workshop-panel" class="panel">
+            <h2 style="border-bottom: 2px solid var(--workshop-pink); color: var(--workshop-pink);">SENTINEL WORKSHOP</h2>
+            <p style="font-size: 0.7rem; color: #888;">COMMUNITY SKINS - NO P2W</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="intel-card" style="border-color: var(--workshop-pink); text-align: center;">
+                    <div style="height:60px; background:#222; margin-bottom:5px;"></div>
+                    <span style="font-size:0.8rem;">'NEON VAPOR' F-18</span><br>
+                    <button class="menu-btn" style="width: 100%; font-size: 0.7rem; margin-top: 5px;">2.99 USD</button>
+                </div>
+                <div class="intel-card" style="border-color: var(--workshop-pink); text-align: center;">
+                    <div style="height:60px; background:#222; margin-bottom:5px;"></div>
+                    <span style="font-size:0.8rem;">'IRON MARSHAL' ARMOR</span><br>
+                    <button class="menu-btn" style="width: 100%; font-size: 0.7rem; margin-top: 5px;">1.50 USD</button>
+                </div>
+            </div>
+            <button class="menu-btn" style="width:100%; text-align:center; margin-top:20px;" onclick="closePanels()">BACK</button>
+        </div>
+
+        <div id="intel-panel" class="panel">
+            <h2 style="border-bottom: 2px solid var(--radar-green)">INTEL DOSSIER</h2>
+            <div class="intel-card">
+                <h3 style="color: var(--ufo-cyan)">TARGET: UFO-01 "GLITCH"</h3>
+                <p>Non-Euclidean geometry detected. High-speed scouting behavior.</p>
+            </div>
+            <div class="intel-card" style="border-color: #ffaa00;">
+                <h3 style="color: #ffaa00;">TARGET: UFO-02 "OBELISK"</h3>
+                <p>Stationary structures. High-output energy beams detected.</p>
+            </div>
+            <button class="menu-btn" style="width:100%; text-align:center" onclick="closePanels()">BACK</button>
+        </div>
+
+        <div id="custom-panel" class="panel">
+            <h2 style="border-bottom: 2px solid var(--radar-green)">CUSTOM CO-OP OPS</h2>
+            <div class="intel-card">
+                <label>INVASION DENSITY: 50%</label><br>
+                <input type="range" min="1" max="100" value="50" style="width:100%;">
+            </div>
+            <div class="intel-card">
+                <label>PERMADEATH:</label>
+                <input type="checkbox" checked> <span style="color: var(--titan-red)">[SOLDIERS DIE FOREVER]</span>
+            </div>
+            <button class="menu-btn" style="width:100%; background: rgba(0,255,65,0.2)">LAUNCH CUSTOM OP</button>
+            <button class="menu-btn" style="width:100%; margin-top:10px;" onclick="closePanels()">BACK</button>
+        </div>
+
+        <div id="editor-panel" class="panel" style="border-color: #aaa;">
+            <h2 style="border-bottom: 2px solid #aaa; color: #aaa;">TACTICAL MAP ARCHITECT</h2>
+            <div style="display: flex; gap: 20px;">
+                <div style="flex-grow: 1; height: 300px; border: 1px dashed #444; background: linear-gradient(45deg, #0a0a0a 25%, #0d0d0d 25%, #0d0d0d 50%, #0a0a0a 50%, #0a0a0a 75%, #0d0d0d 75%, #0d0d0d 100%); background-size: 20px 20px; position: relative; display: flex; align-items: center; justify-content: center;">
+                    <span style="color: #444; font-size: 0.7rem;">[TACTICAL GRID VIEW]</span>
+                </div>
+                <div style="width: 200px;">
+                    <div class="section-label" style="margin-top:0;">ASSETS</div>
+                    <button class="menu-btn" style="font-size: 0.6rem; width: 100%; margin-bottom: 5px;">ADD COVER</button>
+                    <button class="menu-btn" style="font-size: 0.6rem; width: 100%; margin-bottom: 5px;">ADD BUILDING</button>
+                </div>
+            </div>
+            <button class="menu-btn" style="width:100%; text-align:center; margin-top:20px;" onclick="closePanels()">BACK</button>
+        </div>
+
+    </div>
+
+    <script>
+        function openPanel(id) {
+            document.getElementById('main-menu').style.display = 'none';
+            document.getElementById(id).style.display = 'block';
+        }
+
+        function closePanels() {
+            document.getElementById('main-menu').style.display = 'flex';
+            document.querySelectorAll('.panel').forEach(p => p.style.display = 'none');
+        }
+
+        function setChaos(level, label) {
+            const log = document.getElementById('chaos-log');
+            log.innerText = `SEEDING SYSTEM WITH ${label.toUpperCase()} VARIABLES... CHAOS LEVEL: ${level}`;
+            log.style.color = level > 0.6 ? "var(--titan-red)" : "var(--radar-green)";
+        }
+
+        function showDetails(name, job, acc, hp, mob, will) {
+            document.getElementById('det-name').innerText = name;
+            document.getElementById('det-class').innerText = job;
+            document.getElementById('det-acc').innerText = acc;
+            document.getElementById('det-hp').innerText = hp;
+            document.getElementById('det-mob').innerText = mob;
+            document.getElementById('det-will').innerText = will;
+        }
+
+        // Geoscape generator
+        const bg = document.getElementById('geoscape-bg');
+        for(let i=0; i<35; i++) {
+            let div = document.createElement('div');
+            div.className = (i % 5 === 0) ? 'ufo-anomaly' : 'war-zone';
+            div.style.top = Math.random() * 80 + 10 + '%';
+            div.style.left = Math.random() * 80 + 10 + '%';
+            bg.appendChild(div);
+        }
+    </script>
+</body>
+</html>
