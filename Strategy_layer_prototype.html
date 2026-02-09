@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sentinel Alliance - Global Command v3</title>
+    <style>
+        :root {
+            --hq-blue: #0078ff;
+            --radar-green: #00ff41;
+            --titan-red: #ff3300;
+            --bg-dark: #020408;
+            --fog-color: rgba(0, 5, 15, 0.9);
+        }
+
+        body {
+            margin: 0; background: var(--bg-dark);
+            color: white; font-family: 'Courier New', Courier, monospace;
+            overflow: hidden; display: flex; flex-direction: column; height: 100vh;
+        }
+
+        /* --- UI OVERLAYS --- */
+        .resource-bar {
+            height: 50px; background: rgba(0, 0, 0, 0.95);
+            border-bottom: 2px solid var(--hq-blue);
+            display: flex; align-items: center; padding: 0 20px;
+            gap: 25px; font-size: 0.85rem; z-index: 1000;
+        }
+
+        #geoscape-container {
+            flex-grow: 1; position: relative; 
+            background: radial-gradient(circle at center, #0a1525 0%, #020408 100%);
+            overflow: hidden; cursor: crosshair;
+        }
+
+        /* NIEBLA DE GUERRA DINÁMICA */
+        #fog-of-war {
+            position: absolute; width: 100%; height: 100%;
+            background: var(--fog-color);
+            z-index: 5; pointer-events: none;
+            mask-image: radial-gradient(circle 180px at 10% 40%, transparent 20%, black 100%);
+            -webkit-mask-image: radial-gradient(circle 180px at 10% 40%, transparent 20%, black 100%);
+        }
+
+        .map-grid {
+            position: absolute; width: 200%; height: 200%; top: -50%; left: -50%;
+            background-image: linear-gradient(rgba(0, 120, 255, 0.05) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(0, 120, 255, 0.05) 1px, transparent 1px);
+            background-size: 60px 60px;
+        }
+
+        /* UNIDADES Y BASES */
+        .base-node {
+            position: absolute; transform: translate(-50%, -50%);
+            text-align: center; z-index: 6; cursor: pointer;
+        }
+
+        .base-icon { width: 16px; height: 16px; border: 2px solid white; margin: 0 auto 5px; }
+        .base-label { font-size: 8px; text-transform: uppercase; white-space: nowrap; }
+
+        .skyranger { position: absolute; transform: translate(-50%, -50%); z-index: 10; transition: all 1s linear; }
+
+        /* PANELES */
+        .side-panel {
+            position: absolute; right: 20px; top: 70px; width: 280px;
+            background: rgba(5, 10, 20, 0.98); border: 1px solid var(--hq-blue);
+            padding: 15px; display: none; z-index: 2000;
+        }
+
+        .btn {
+            background: rgba(0, 120, 255, 0.1); border: 1px solid var(--hq-blue);
+            color: white; padding: 5px; width: 100%; cursor: pointer; font-size: 0.7rem; margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="resource-bar">
+        <div class="res-item">COMMANDER: <b>MIGUEL_SA</b></div>
+        <div class="res-item">PERSONNEL: <b style="color:var(--radar-green)">200/200</b></div>
+        <div style="flex-grow:1; text-align:right; color:var(--radar-green);">STRATEGY LAYER: READY</div>
+    </div>
+
+    <div id="geoscape-container" oncontextmenu="return false;">
+        <div class="map-grid"></div>
+        <div id="fog-of-war"></div>
+
+        <div class="base-node" style="top: 40%; left: 10%;">
+            <div class="base-icon" style="background: var(--radar-green); border-color: var(--radar-green);"></div>
+            <div class="base-label" style="color: var(--radar-green);">MAIN BASE (YOU)</div>
+        </div>
+
+        <div class="base-node" style="top: 30%; left: 60%;" onclick="openAlly('ZORA_VANGUARD', 'ONLINE')">
+            <div class="base-icon" style="background: var(--hq-blue);"></div>
+            <div class="base-label">ZORA_VANGUARD</div>
+        </div>
+
+        <div class="base-node" style="top: 75%; left: 35%;" onclick="openAlly('GHOST_OP', 'OFFLINE')">
+            <div class="base-icon" style="background: #444;"></div>
+            <div class="base-label">GHOST_OP</div>
+        </div>
+
+        <div id="skyranger" class="skyranger" style="top: 40%; left: 12%;">
+            <div style="font-size: 1.2rem;">✈</div>
+        </div>
+    </div>
+
+    <div id="ally-panel" class="side-panel">
+        <h3 id="a-name" style="margin: 0; color: var(--hq-blue);">ALLY</h3>
+        <p id="a-status" style="font-size: 0.7rem;">Status: -</p>
+        <button class="btn" onclick="alert('Sending resources...')">TRADE: 500 CREDITS</button>
+        <button class="btn" onclick="alert('Help requested!')">REQUEST CO-OP REINFORCEMENTS</button>
+        <button class="btn" style="border-color:#555" onclick="togglePanel('ally-panel')">CLOSE</button>
+    </div>
+
+    <script>
+        const container = document.getElementById('geoscape-container');
+        const unit = document.getElementById('skyranger');
+        const fog = document.getElementById('fog-of-war');
+
+        container.addEventListener('mousedown', (e) => {
+            if (e.button === 2) {
+                const rect = container.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 100;
+                const y = ((e.clientY - rect.top) / rect.height) * 100;
+                unit.style.left = x + '%';
+                unit.style.top = y + '%';
+                // Movemos la visión de la niebla
+                fog.style.webkitMaskImage = `radial-gradient(circle 180px at ${x}% ${y}%, transparent 20%, black 100%)`;
+            }
+        });
+
+        function openAlly(name, status) {
+            document.getElementById('a-name').innerText = name;
+            document.getElementById('a-status').innerText = `STATUS: ${status}`;
+            document.getElementById('a-status').style.color = status === 'ONLINE' ? 'var(--radar-green)' : '#666';
+            document.getElementById('ally-panel').style.display = 'block';
+        }
+
+        function togglePanel(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+    </script>
+</body>
+</html>
+
+Tu mazo de diapositivas sobre la **Base Operations** está listo. He introducido variaciones en el diseño para que sientas la potencia de la "Sentinel Alliance" desde el primer vistazo. Si estás listo, avísame y saltamos al motor de la **Tactical Layer**. ¡Esa sensación de *Heat* nos espera!
