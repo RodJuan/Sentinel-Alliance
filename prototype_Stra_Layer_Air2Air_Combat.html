@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sentinel Alliance: Tactical Prototype v9.4 - ULTRA</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #010203; color: #00ffcc; font-family: 'Courier New', monospace; user-select: none; }
+        canvas { display: block; }
+        .hud-panel { background: rgba(0, 5, 10, 0.96); border: 1px solid #0055ff; padding: 12px; margin-bottom: 5px; pointer-events: auto; }
+        #ui-left { position: absolute; top: 10px; left: 10px; width: 280px; pointer-events: none; }
+        #ui-right { position: absolute; top: 10px; right: 10px; width: 280px; text-align: right; }
+        #log-layer { position: absolute; bottom: 10px; left: 10px; width: 450px; height: 140px; overflow: hidden; border-left: 3px solid #00ffcc; pointer-events: none; background: linear-gradient(to right, rgba(0,255,204,0.05), transparent); }
+        .log-entry { font-size: 11px; color: #00ffcc; padding: 2px 10px; text-shadow: 1px 1px 2px black; }
+        button { background: #001133; color: #00ffcc; border: 1px solid #0055ff; padding: 6px; cursor: pointer; font-family: inherit; font-size: 10px; margin: 2px; }
+        button.active { background: #00ffcc; color: #000; box-shadow: 0 0 10px #00ffcc; }
+        input[type=range] { accent-color: #00ffcc; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div id="overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); display:none; flex-direction:column; justify-content:center; align-items:center; z-index:100;">
+        <h1 style="color:#ff0066; letter-spacing:10px;">CORE DESTROYED</h1>
+        <button onclick="location.reload()" style="padding:15px; font-size:18px;">RE-LINK SYSTEM</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-left">
+        <div class="hud-panel">
+            <h1 style="font-size:16px; margin:0; color:#00ffcc;">ULTRA TACTICAL v9.4</h1>
+            <div id="unit-info" style="font-size:11px; margin-top:8px;">READY FOR DEPLOYMENT...</div>
+        </div>
+        <div class="hud-panel" style="pointer-events: auto;">
+            <button id="btn-def" onclick="setDoctrine('defensive')">DEFENSIVE</button>
+            <button id="btn-agg" onclick="setDoctrine('aggressive')">AGGRESSIVE</button>
+            <button id="btn-swr" class="active" onclick="setDoctrine('swarm')">SWARM</button>
+        </div>
+        <div class="hud-panel" style="pointer-events: auto;">
+            <button onclick="config.count=1; resetSquad()">1 v BOSS</button>
+            <button onclick="config.count=10; resetSquad()">10 v BOSS</button>
+            <button onclick="config.ufo='carrier'; resetSquad()" style="color:#ff0066;">SUPER CARRIER</button>
+        </div>
+    </div>
+
+    <div id="ui-right">
+        <div class="hud-panel">
+            <button onclick="togglePause()" style="width:100%; font-weight:bold; height:30px;">PAUSE / RESUME</button>
+            <div style="font-size:11px; margin-top:10px;">
+                <label>SIM SPEED: <span id="time-val">0.4x</span></label>
+                <input type="range" id="time-slider" min="0.1" max="1.5" step="0.1" value="0.4" style="width:100%;">
+            </div>
+            <div style="font-size:11px; margin-top:10px;">
+                <label style="color:#ffcc00;">FX DENSITY: <span id="fx-val">150%</span></label>
+                <input type="range" id="fx-slider" min="0" max="300" step="10" value="150" style="width:100%;">
+            </div>
+        </div>
+    </div>
+
+    <div id="log-layer"><div id="game-log"></div></div>
+
+    <script>
+        const Vec = {
+            sub: (v1, v2) => ({ x: v1.x - v2.x, y: v1.y - v2.y }),
+            add: (v1, v2) => ({ x: v1.x + v2.x, y: v1.y + v2.y }),
+            mul: (v, s) => ({ x: v.x * s, y: v.y * s }),
+            mag: (v) => Math.sqrt(v.x * v.x + v.y * v.y),
+            norm: (v) => { let m = Vec.mag(v); return m > 0 ? Vec.mul(v, 1/m) : {x:0, y:0}; },
+            dist: (v1, v2) => Vec.mag(Vec.sub(v1, v2)),
+            rot: (v, a) => ({ x: v.x * Math.cos(a) - v.y * Math.sin(a), y: v.x * Math.sin(a) + v.y * Math.cos(a) }),
+            dot: (v1, v2) => v1.x * v2.x + v1.y * v2.y
+        };
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const WORLD_SIZE = 1400;
+        let width, height, lastTime = performance.now();
+        let baseTimeScale = 0.4, fxDensity = 1.5, currentDoctrine = 'swarm', paused = false;
+        let selectedUnit = null, camera = { x: 0, y: 0, zoom: 0.5, shake: 0 };
+        let config = { count: 10, ufo: 'carrier' };
+
+        const units = [], projectiles = [], particles = [], floaters = [];
+
+        class Particle {
+            constructor(x, y, vx, vy, life, color, size) {
+                this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+                this.life = life; this.maxLife = life; this.color = color; this.size = size;
+            }
+            update(dt) { this.x += this.vx * dt; this.y += this.vy * dt; this.life -= dt; this.vx *= 0.99; this.vy *= 0.99; }
+            draw(ctx) { 
+                ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
+                ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI*2); ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        function createExplosion(x, y, color, count) {
+            let adjCount = count * fxDensity;
+            if(particles.length > 2000) adjCount *= 0.5; // Auto-limit para evitar lag
+            for(let i=0; i<adjCount; i++) {
+                let ang = Math.random() * Math.PI * 2;
+                let spd = Math.random() * 400;
+                particles.push(new Particle(x, y, Math.cos(ang)*spd, Math.sin(ang)*spd, 0.5 + Math.random()*1.5, color, Math.random()*3.5));
+            }
+        }
+
+        class Unit {
+            constructor(name, x, y, team, archetype = 'standard') {
+                this.name = name; this.pos = {x, y}; this.vel = {x: 0, y: 0};
+                this.heading = {x: 1, y: 0}; this.team = team;
+                this.stunTimer = 0; this.fireTimer = 0; this.dashCooldown = 0;
+                this.spawnTimer = 4.0; this.archetype = archetype;
+                this.maxHp = team === 'blue' ? 100 : (archetype === 'carrier' ? 3000 : 400);
+                if(archetype === 'mini') this.maxHp = 60;
+                this.hp = this.maxHp;
+                this.speed = team === 'blue' ? 245 : (archetype === 'carrier' ? 65 : 370);
+            }
+
+            update(dt) {
+                if (this.hp <= 0 || paused) return;
+                if(Math.abs(this.pos.x) > WORLD_SIZE) { this.vel.x *= -1; this.pos.x = Math.sign(this.pos.x)*WORLD_SIZE; }
+                if(Math.abs(this.pos.y) > WORLD_SIZE) { this.vel.y *= -1; this.pos.y = Math.sign(this.pos.y)*WORLD_SIZE; }
+                if (this.dashCooldown > 0) this.dashCooldown -= dt;
+
+                // FX Trails
+                if (fxDensity > 0.1 && Math.random() < 0.4 * fxDensity) {
+                    particles.push(new Particle(this.pos.x, this.pos.y, -this.heading.x*50, -this.heading.y*50, 0.4, this.team==='blue'?"#00ffff":"#ff3300", 1));
+                }
+
+                if(this.archetype === 'carrier' && (this.spawnTimer -= dt) <= 0) {
+                    units.push(new Unit("INT-DRONE", this.pos.x, this.pos.y, 'red', 'mini'));
+                    this.spawnTimer = 4.5;
+                }
+
+                if (this.stunTimer > 0) {
+                    this.stunTimer -= dt; this.heading = Vec.rot(this.heading, 0.1);
+                    this.pos = Vec.add(this.pos, Vec.mul(this.vel, dt));
+                    this.vel = Vec.mul(this.vel, 0.99); return;
+                }
+
+                if (!this.target || this.target.hp <= 0) {
+                    let enemies = units.filter(u => u.team !== this.team && u.hp > 0);
+                    this.target = enemies.length > 0 ? enemies[0] : null;
+                }
+
+                // Bubble Physics
+                let separation = {x:0, y:0};
+                units.forEach(u => {
+                    if (u !== this && u.hp > 0 && u.team === this.team) {
+                        let d = Vec.dist(this.pos, u.pos);
+                        if (d < 90) separation = Vec.add(separation, Vec.mul(Vec.norm(Vec.sub(this.pos, u.pos)), (90-d)/90));
+                    }
+                });
+
+                let steer = this.heading;
+                if(this.manualDest) {
+                    let d = Vec.sub(this.manualDest, this.pos);
+                    if (Vec.mag(d) < 40) this.manualDest = null; else steer = Vec.norm(d);
+                } else if(this.target) {
+                    let d = Vec.dist(this.pos, this.target.pos);
+                    let toT = Vec.norm(Vec.sub(this.target.pos, this.pos));
+                    if(this.team === 'blue') {
+                        let opt = currentDoctrine === 'defensive' ? 620 : (currentDoctrine === 'aggressive' ? 180 : 380);
+                        steer = (d < opt-70) ? Vec.rot(toT, 1.8) : (d > opt+70 ? toT : Vec.rot(toT, 1.57));
+                    } else {
+                        steer = (this.archetype === 'mini') ? toT : (this.archetype === 'carrier' ? Vec.rot(toT, 0.4) : toT);
+                    }
+                }
+
+                let finalSteer = Vec.norm(Vec.add(Vec.mul(steer, 0.6), Vec.mul(separation, 0.4)));
+                this.heading = Vec.norm(Vec.add(Vec.mul(this.heading, 0.93), Vec.mul(finalSteer, 0.07)));
+                this.vel = Vec.add(Vec.mul(this.vel, 0.94), Vec.mul(Vec.mul(this.heading, this.speed), 0.06));
+                this.pos = Vec.add(this.pos, Vec.mul(this.vel, dt));
+
+                if (this.target && (this.fireTimer -= dt) <= 0) {
+                    if (Vec.dot(this.heading, Vec.norm(Vec.sub(this.target.pos, this.pos))) > 0.95 && Vec.dist(this.pos, this.target.pos) < 650) {
+                        projectiles.push({ pos: {...this.pos}, heading: {...this.heading}, team: this.team, life: 0.8 });
+                        this.fireTimer = this.team==='blue' ? 0.4 : 0.6;
+                    }
+                }
+            }
+
+            draw(ctx) {
+                if (this.hp <= 0) return;
+                ctx.save(); ctx.translate(this.pos.x, this.pos.y);
+                
+                // FOV PERMANENTE
+                let toTarget = this.target ? Vec.norm(Vec.sub(this.target.pos, this.pos)) : null;
+                let grad = ctx.createRadialGradient(0,0,5, 0,0,450);
+                grad.addColorStop(0, (toTarget && Vec.dot(this.heading, toTarget) > 0.95) ? "rgba(255,255,0,0.12)" : "rgba(0,255,200,0.05)");
+                grad.addColorStop(1, "transparent");
+                ctx.fillStyle = grad;
+                ctx.beginPath(); ctx.moveTo(0,0); ctx.arc(0,0, 450, -Math.PI/12, Math.PI/12); ctx.fill();
+
+                if(this.stunTimer > 0) ctx.translate(Math.random()*6-3, 0);
+                ctx.rotate(Math.atan2(this.heading.y, this.heading.x));
+                
+                ctx.strokeStyle = (this === selectedUnit) ? '#ffff00' : (this.team === 'blue' ? '#00ffcc' : '#ff0066');
+                ctx.lineWidth = 2; ctx.beginPath();
+                if(this.team === 'blue') { ctx.moveTo(18,0); ctx.lineTo(-12,10); ctx.lineTo(-12,-10); }
+                else {
+                    if(this.archetype === 'carrier') { ctx.rect(-50,-40,100,80); ctx.moveTo(20,-15); ctx.lineTo(20,15); }
+                    else if(this.archetype === 'mini') { ctx.moveTo(10,0); ctx.lineTo(-8,6); ctx.lineTo(-8,-6); }
+                    else ctx.arc(0,0,25,0,Math.PI*2);
+                }
+                ctx.closePath(); ctx.stroke(); ctx.restore();
+            }
+        }
+
+        function loop(t) {
+            let dt = (t - lastTime) / 1000; lastTime = t;
+            if (!paused) {
+                let simDt = dt * baseTimeScale;
+                units.forEach(u => u.update(simDt));
+                particles.forEach((p,i) => { p.update(simDt); if(p.life <= 0) particles.splice(i,1); });
+                floaters.forEach((f,i) => { f.update(simDt); if(f.life <= 0) floaters.splice(i,1); });
+
+                projectiles.forEach((p, idx) => {
+                    p.pos = Vec.add(p.pos, Vec.mul(p.heading, 1400 * simDt)); p.life -= simDt;
+                    units.forEach(u => {
+                        if(u.hp > 0 && u.team !== p.team && Vec.dist(p.pos, u.pos) < (u.archetype==='carrier'?55:35)) {
+                            let dmg = u.archetype==='mini'? 20 : 10; u.hp -= dmg; p.life = 0;
+                            floaters.push({ x: u.pos.x, y: u.pos.y, text: `-${dmg}`, color: "#ff3300", life: 1, update(d){this.y-=50*d;this.life-=d}, draw(c){c.globalAlpha=this.life;c.fillStyle=this.color;c.fillText(this.text,this.x,this.y);c.globalAlpha=1} });
+                            createExplosion(p.pos.x, p.pos.y, "#ffff00", 10);
+                            if(u === selectedUnit) camera.shake = 15;
+                            if(u.hp <= 0) { createExplosion(u.pos.x, u.pos.y, u.team==='blue'?"#00ffff":"#ff0033", 80); addLog(`KIA: ${u.name}`); }
+                        }
+                    });
+                    if(p.life <= 0) projectiles.splice(idx, 1);
+                });
+
+                units.forEach((u1, i) => {
+                    units.slice(i+1).forEach(u2 => {
+                        if(u1.hp > 0 && u2.hp > 0 && u1.team !== u2.team && Vec.dist(u1.pos, u2.pos) < (u1.archetype==='carrier'||u2.archetype==='carrier'?80:50)) {
+                            camera.shake = 30; createExplosion(u1.pos.x, u1.pos.y, "#ffffff", 30);
+                            if(u1.archetype === 'carrier') { u2.hp -= 60; u2.stunTimer = 4; }
+                            else if(u2.archetype === 'carrier') { u1.hp -= 60; u1.stunTimer = 4; }
+                            else { u1.hp -= 40; u2.hp -= 40; u1.stunTimer = 3; u2.stunTimer = 3; }
+                        }
+                    });
+                });
+                if(camera.shake > 0) camera.shake *= 0.88;
+            }
+            updateCamera(dt); draw(); requestAnimationFrame(loop);
+        }
+
+        function updateCamera(dt) {
+            let active = units.filter(u => u.hp > 0); if(active.length === 0) return;
+            let tx, ty, tz;
+            if (selectedUnit && selectedUnit.hp > 0) { tx = selectedUnit.pos.x; ty = selectedUnit.pos.y; tz = 0.98; }
+            else { let sx=0, sy=0; active.forEach(u=>{sx+=u.pos.x; sy+=u.pos.y}); tx = sx/active.length; ty = sy/active.length; tz = 0.4; }
+            camera.x += (tx - camera.x) * dt * 5; camera.y += (ty - camera.y) * dt * 5; camera.zoom += (tz - camera.zoom) * dt * 3;
+        }
+
+        function draw() {
+            ctx.fillStyle = "#010203"; ctx.fillRect(0,0,width,height);
+            ctx.save();
+            ctx.translate(width/2 + (Math.random()*camera.shake - camera.shake/2), height/2 + (Math.random()*camera.shake - camera.shake/2));
+            ctx.scale(camera.zoom, camera.zoom); ctx.translate(-camera.x, -camera.y);
+            
+            // Grid
+            ctx.strokeStyle = "rgba(0,100,255,0.06)"; ctx.lineWidth = 2;
+            for(let i=-WORLD_SIZE; i<=WORLD_SIZE; i+=250) {
+                ctx.beginPath(); ctx.moveTo(i, -WORLD_SIZE); ctx.lineTo(i, WORLD_SIZE); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(-WORLD_SIZE, i); ctx.lineTo(WORLD_SIZE, i); ctx.stroke();
+            }
+
+            particles.forEach(p => p.draw(ctx));
+            units.forEach(u => {
+                u.draw(ctx);
+                if(u.hp > 0) {
+                    ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(u.pos.x-30, u.pos.y-60, 60, 6);
+                    ctx.fillStyle = u.team==='blue'?"#00ffcc":"#ff0066";
+                    ctx.fillRect(u.pos.x-30, u.pos.y-60, 60*(u.hp/u.maxHp), 6);
+                }
+            });
+            projectiles.forEach(p => { 
+                ctx.fillStyle = "#fff"; ctx.shadowBlur = 10; ctx.shadowColor = "#00ffff"; 
+                ctx.beginPath(); ctx.arc(p.pos.x, p.pos.y, 3, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; 
+            });
+            floaters.forEach(f => f.draw(ctx));
+            ctx.restore();
+            
+            if(selectedUnit) {
+                document.getElementById('unit-info').innerHTML = `<strong>${selectedUnit.name}</strong><br>HP: ${Math.floor(selectedUnit.hp)} / ${selectedUnit.maxHp}<br>STATUS: ${selectedUnit.stunTimer > 0 ? 'SYSTEM GLITCH' : 'ACTIVE'}`;
+            }
+        }
+
+        window.onresize = () => { width = window.innerWidth; height = window.innerHeight; canvas.width = width; canvas.height = height; };
+        canvas.onmousedown = (e) => {
+            let r = canvas.getBoundingClientRect();
+            let mx = (e.clientX - r.left - width/2) / camera.zoom + camera.x;
+            let my = (e.clientY - r.top - height/2) / camera.zoom + camera.y;
+            if(e.button===0) selectedUnit = units.find(u => u.hp > 0 && Vec.dist(u.pos, {x:mx, y:my}) < 70) || null;
+            if(e.button===2 && selectedUnit) selectedUnit.manualDest = {x:mx, y:my};
+        };
+        window.addEventListener('keydown', (e) => {
+            if(e.code === 'Space') togglePause();
+            if(e.key === 'Shift' && selectedUnit) {
+                selectedUnit.vel = Vec.mul(selectedUnit.heading, 1600); 
+                selectedUnit.dashCooldown = 3; 
+                createExplosion(selectedUnit.pos.x, selectedUnit.pos.y, "#ffffff", 25);
+            }
+        });
+        window.oncontextmenu = (e) => e.preventDefault();
+        function setDoctrine(d) { currentDoctrine = d; document.querySelectorAll('#ui-left button').forEach(b => b.classList.remove('active')); document.getElementById('btn-'+d.substring(0,3)).classList.add('active'); addLog(`ORDER: ${d.toUpperCase()}`); }
+        function resetSquad() {
+            units.length = 0; projectiles.length = 0; particles.length = 0; floaters.length = 0;
+            for(let i=0; i<config.count; i++) units.push(new Unit(`VIPER-${i+1}`, -800, (i-config.count/2)*130, 'blue'));
+            units.push(new Unit(`GOLIATH-CARRIER`, 800, 0, 'red', config.ufo));
+            camera.x = 0; camera.y = 0; camera.zoom = 0.5;
+            addLog(`MISSION START: ${config.ufo.toUpperCase()} DETECTED`);
+        }
+        function togglePause() { paused = !paused; }
+        function addLog(m) { const l = document.getElementById('game-log'); l.innerHTML = `<div class="log-entry">> ${m}</div>` + l.innerHTML; }
+        document.getElementById('time-slider').oninput = (e) => { baseTimeScale = e.target.value; document.getElementById('time-val').innerText = baseTimeScale + 'x'; };
+        document.getElementById('fx-slider').oninput = (e) => { fxDensity = e.target.value / 100; document.getElementById('fx-val').innerText = e.target.value + '%'; };
+        window.onresize(); resetSquad(); loop(performance.now());
+    </script>
+</body>
+</html>
